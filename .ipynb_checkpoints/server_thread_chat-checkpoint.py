@@ -1,8 +1,6 @@
 from socket import *
 import socket
 import threading
-import time
-import sys
 import json
 import logging
 from chat import Chat
@@ -18,7 +16,7 @@ class ProcessTheClient(threading.Thread):
 	def run(self):
 		rcv=""
 		while True:
-			data = self.connection.recv(32)
+			data = self.connection.recv(2048)
 			if data:
 				d = data.decode()
 				rcv=rcv+d
@@ -42,7 +40,7 @@ class Server(threading.Thread):
 		threading.Thread.__init__(self)
 
 	def run(self):
-		self.my_socket.bind(('0.0.0.0',8887))
+		self.my_socket.bind(('0.0.0.0',8889))
 		self.my_socket.listen(1)
 		while True:
 			self.connection, self.client_address = self.my_socket.accept()
@@ -54,9 +52,9 @@ class Server(threading.Thread):
 	
 
 def main():
-	svr = Server()
-	svr.start()
+    print("Waiting for the connection...")
+    svr = Server()
+    svr.start()
 
 if __name__=="__main__":
 	main()
-

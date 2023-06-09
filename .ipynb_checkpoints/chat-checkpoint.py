@@ -1,224 +1,548 @@
-import sys
+import base64
 import os
 import json
 import uuid
 import logging
-from queue import Queue
+from queue import  Queue
+import threading 
+import socket
+import shutil
+from datetime import datetime
+
+class RealmThreadCommunication(threading.Thread):
+    def __init__(self, chats, realm_dest_address, realm_dest_port):
+        self.chats = chats
+        self.chat = {}
+        self.realm_dest_address = realm_dest_address
+        self.realm_dest_port = realm_dest_port
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((self.realm_dest_address, self.realm_dest_port))
+        threading.Thread.__init__(self)
+
+    def sendstring(self, string):
+        try:
+            self.sock.sendall(string.encode())
+            receivedmsg = ""
+            while True:
+                data = self.sock.recv(1024)
+                print("diterima dari server", data)
+                if (data):
+                    receivedmsg = "{}{}" . format(receivedmsg, data.decode())  #data harus didecode agar dapat di operasikan dalam bentuk string
+                    if receivedmsg[-4:]=='\r\n\r\n':
+                        print("end of string")
+                        return json.loads(receivedmsg)
+        except:
+            self.sock.close()
+            return { 'status' : 'ERROR', 'message' : 'Gagal'}
+    
+    def put(self, message):
+        dest = message['msg_to']
+        try:
+            self.chat[dest].put(message)
+        except KeyError:
+            self.chat[dest]=Queue()
+            self.chat[dest].put(message)
 
 class Chat:
     def __init__(self):
-        self.sessions = {}
+        self.sessions={}
         self.users = {}
-        self.users['messi'] = {'nama': 'Lionel Messi', 'negara': 'Argentina', 'password': 'surabaya', 'incoming': {}, 'outgoing': {}}
-        self.users['henderson'] = {'nama': 'Jordan Henderson', 'negara': 'Inggris', 'password': 'surabaya', 'incoming': {}, 'outgoing': {}}
-        self.users['lineker'] = {'nama': 'Gary Lineker', 'negara': 'Inggris', 'password': 'surabaya', 'incoming': {}, 'outgoing': {}}
-        self.groups = {}
-
-    def proses(self, data):
-        j = data.split(" ")
+        self.users['messi']={ 'nama': 'Lionel Messi', 'negara': 'Argentina', 'password': 'surabaya', 'incoming' : {}, 'outgoing': {}}
+        self.users['henderson']={ 'nama': 'Jordan Henderson', 'negara': 'Inggris', 'password': 'surabaya', 'incoming': {}, 'outgoing': {}}
+        self.users['lineker']={ 'nama': 'Gary Lineker', 'negara': 'Inggris', 'password': 'surabaya','incoming': {}, 'outgoing':{}}
+        self.realms = {}
+    def proses(self,data):
+        j=data.split(" ")
         try:
-            command = j[0].strip()
-            if command == 'auth':
-                username = j[1].strip()
-                password = j[2].strip()
-                logging.warning("AUTH: auth {} {}".format(username, password))
-                return self.autentikasi_user(username, password)
-            elif command == 'send':
+            command=j[0].strip()
+            if (command=='auth'):
+                username=j[1].strip()
+                password=j[2].strip()
+                logging.warning("AUTH: auth {} {}" . format(username,password))
+                return self.autentikasi_user(username,password)
+            
+#   ===================== Komunikasi dalam satu server =====================            
+            elif (command=='send'):
                 sessionid = j[1].strip()
-                recipient = j[2].strip()  # Nama penerima (bisa username atau nama grup)
-                message = " ".join(j[3:])
-                username_from = self.sessions[sessionid]['username']
-                logging.warning("SEND: session {} send message from {} to {}" . format(sessionid, username_from, recipient))
-                return self.send_message(sessionid, username_from, recipient, message)
-            elif command == 'inbox':
+                usernameto = j[2].strip()
+                message=""
+                for w in j[3:]:
+                    message="{} {}" . format(message,w)
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SEND: session {} send message from {} to {}" . format(sessionid, usernamefrom,usernameto))
+                return self.send_message(sessionid,usernamefrom,usernameto,message)
+            elif (command=='sendgroup'):
+                sessionid = j[1].strip()
+                usernamesto = j[2].strip().split(',')
+                message=""
+                for w in j[3:]:
+                    message="{} {}" . format(message,w)
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SEND: session {} send message from {} to {}" . format(sessionid, usernamefrom,usernamesto))
+                return self.send_group_message(sessionid,usernamefrom,usernamesto,message)
+            elif (command=='inbox'):
                 sessionid = j[1].strip()
                 username = self.sessions[sessionid]['username']
-                logging.warning("INBOX: {}".format(sessionid))
+                logging.warning("INBOX: {}" . format(sessionid))
                 return self.get_inbox(username)
-            elif command == 'addgroup':  # Tambahkan command 'addgroup'
+            elif (command=='sendfile'):
                 sessionid = j[1].strip()
-                groupname = j[2].strip()
-                usernames = j[3:]  # Ambil semua username yang diberikan
-                username_creator = self.sessions[sessionid]['username']
-                logging.warning("ADDGROUP: session {} create group {} with members {}" . format(sessionid, groupname, usernames))
-                return self.add_group(sessionid, username_creator, groupname, usernames)
-            elif command == 'joingroup':
-                group_name = j[1].strip()
-                sessionid = j[2].strip()
+                usernameto = j[2].strip()
+                filepath = j[3].strip()
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SENDFILE: session {} send file from {} to {}" . format(sessionid, usernamefrom, usernameto))
+                return self.send_file(sessionid, usernamefrom, usernameto, filepath)
+            elif (command=='sendgroupfile'):
+                sessionid = j[1].strip()
+                usernamesto = j[2].strip().split(',')
+                filepath = j[3].strip()
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SENDGROUPFILE: session {} send file from {} to {}" . format(sessionid, usernamefrom, usernamesto))
+                return self.send_group_file(sessionid, usernamefrom, usernamesto, filepath)
+
+
+  #   ===================== Komunikasi dengan server lain =====================           
+            elif (command=='addrealm'):
+                realm_id = j[1].strip()
+                realm_dest_address = j[2].strip()
+                realm_dest_port = int(j[3].strip())
+                return self.add_realm(realm_id, realm_dest_address, realm_dest_port, data)
+            elif (command=='recvrealm'):
+                realm_id = j[1].strip()
+                realm_dest_address = j[2].strip()
+                realm_dest_port = int(j[3].strip())
+                return self.recv_realm(realm_id, realm_dest_address, realm_dest_port, data)
+            elif (command == 'sendprivaterealm'):
+                sessionid = j[1].strip()
+                realm_id = j[2].strip()
+                usernameto = j[3].strip()
+                message = ""
+                for w in j[4:]:
+                    message = "{} {}".format(message, w)
+                print(message)
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SENDPRIVATEREALM: session {} send message from {} to {} in realm {}".format(sessionid, usernamefrom, usernameto, realm_id))
+                return self.send_realm_message(sessionid, realm_id, usernamefrom, usernameto, message, data)
+            elif (command == 'sendfilerealm'):
+                sessionid = j[1].strip()
+                realm_id = j[2].strip()
+                usernameto = j[3].strip()
+                filepath = j[4].strip()
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SENDFILEREALM: session {} send file from {} to {} in realm {}".format(sessionid, usernamefrom, usernameto, realm_id))
+                return self.send_file_realm(sessionid, realm_id, usernamefrom, usernameto, filepath, data)
+            elif (command == 'recvrealmprivatemsg'):
+                usernamefrom = j[1].strip()
+                realm_id = j[2].strip()
+                usernameto = j[3].strip()
+                message = ""
+                for w in j[4:]:
+                    message = "{} {}".format(message, w)
+                print(message)
+                logging.warning("RECVREALMPRIVATEMSG: recieve message from {} to {} in realm {}".format( usernamefrom, usernameto, realm_id))
+                return self.recv_realm_message(realm_id, usernamefrom, usernameto, message, data)
+            elif (command == 'sendgrouprealm'):
+                sessionid = j[1].strip()
+                realm_id = j[2].strip()
+                usernamesto = j[3].strip().split(',')
+                message = ""
+                for w in j[4:]:
+                    message = "{} {}".format(message, w)
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SENDGROUPREALM: session {} send message from {} to {} in realm {}".format(sessionid, usernamefrom, usernamesto, realm_id))
+                return self.send_group_realm_message(sessionid, realm_id, usernamefrom,usernamesto, message,data)
+            elif (command == 'sendgroupfilerealm'):
+                sessionid = j[1].strip()
+                realm_id = j[2].strip()
+                usernamesto = j[3].strip().split(',')
+                filepath = j[4].strip()
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SENDGROUPFILEREALM: session {} send file from {} to {} in realm {}".format(sessionid, usernamefrom, usernamesto, realm_id))
+                return self.send_group_file_realm(sessionid, realm_id, usernamefrom,usernamesto, filepath, data)
+            elif (command == 'recvrealmgroupmsg'):
+                usernamefrom = j[1].strip()
+                realm_id = j[2].strip()
+                usernamesto = j[3].strip().split(',')
+                message = ""
+                for w in j[4:]:
+                    message = "{} {}".format(message, w) 
+                logging.warning("RECVGROUPREALM: send message from {} to {} in realm {}".format(usernamefrom, usernamesto, realm_id))
+                return self.recv_group_realm_message(realm_id, usernamefrom,usernamesto, message,data)
+            elif (command == 'getrealminbox'):
+                sessionid = j[1].strip()
+                realmid = j[2].strip()
                 username = self.sessions[sessionid]['username']
-                return self.join_group(group_name, username)
-            elif command == 'sendgroupmessage':
-                group_name = j[1].strip()
-                sessionid = j[2].strip()
-                username = self.sessions[sessionid]['username']
-                message = " ".join(j[3:])
-                return self.send_group_message(group_name, username, message)
-            elif command == 'inboxgroupmessage':
-                group_name = j[1].strip()
+                logging.warning("GETREALMINBOX: {} from realm {}".format(sessionid, realmid))
+                return self.get_realm_inbox(username, realmid)
+            elif (command == 'getrealmchat'):
+                realmid = j[1].strip()
                 username = j[2].strip()
-                return self.get_group_inbox(group_name, username)
+                logging.warning("GETREALMCHAT: from realm {}".format(realmid))
+                return self.get_realm_chat(realmid, username)
             else:
+                print(command)
                 return {'status': 'ERROR', 'message': '**Protocol Tidak Benar'}
         except KeyError:
-            return {'status': 'ERROR', 'message': 'Informasi tidak ditemukan'}
+            return { 'status': 'ERROR', 'message' : 'Informasi tidak ditemukan'}
         except IndexError:
             return {'status': 'ERROR', 'message': '--Protocol Tidak Benar'}
 
-    def autentikasi_user(self, username, password):
-        if username not in self.users:
-            return {'status': 'ERROR', 'message': 'User Tidak Ada'}
-        if self.users[username]['password'] != password:
-            return {'status': 'ERROR', 'message': 'Password Salah'}
-        tokenid = str(uuid.uuid4())
-        self.sessions[tokenid] = {'username': username, 'userdetail': self.users[username]}
-        return {'status': 'OK', 'tokenid': tokenid}
+    def autentikasi_user(self,username,password):
+        if (username not in self.users):
+            return { 'status': 'ERROR', 'message': 'User Tidak Ada' }
+        if (self.users[username]['password']!= password):
+            return { 'status': 'ERROR', 'message': 'Password Salah' }
+        tokenid = str(uuid.uuid4()) 
+        self.sessions[tokenid]={ 'username': username, 'userdetail':self.users[username]}
+        return { 'status': 'OK', 'tokenid': tokenid }
 
-    def get_user(self, username):
-        if username not in self.users:
+    def get_user(self,username):
+        if (username not in self.users):
             return False
         return self.users[username]
 
-    def send_message(self, sessionid, username_from, recipient, message):
-        if sessionid not in self.sessions:
-			return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
-
-		sender = self.get_user(username_from)
-		if sender is False:
-			return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
-
-		if recipient in self.users:
-			recipient_type = 'user'
-			recipient_user = self.get_user(recipient)
-			if recipient_user is False:
-				return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
-		elif recipient in self.groups:
-			recipient_type = 'group'
-			recipient_group = self.groups[recipient]
-		else:
-			return {'status': 'ERROR', 'message': 'Penerima Tidak Ditemukan'}
-
-		message = {'msg_from': sender['nama'], 'msg': message}
-
-		if recipient_type == 'user':
-			# Mengirim pesan ke pengguna
-			outqueue_sender = sender['outgoing']
-			inqueue_receiver = recipient_user['incoming']
-
-			try:
-				outqueue_sender[username_from].put(message)
-			except KeyError:
-				outqueue_sender[username_from] = Queue()
-				outqueue_sender[username_from].put(message)
-			try:
-				inqueue_receiver[username_from].put(message)
-			except KeyError:
-				inqueue_receiver[username_from] = Queue()
-				inqueue_receiver[username_from].put(message)
-
-			return {'status': 'OK', 'message': 'Message Sent'}
-		elif recipient_type == 'group':
-			# Mengirim pesan ke grup
-			members = recipient_group['members']
-
-			for member_username in members:
-				member = self.get_user(member_username)
-				if member is False:
-					continue
-				
-				outqueue_sender = sender['outgoing']
-				inqueue_receiver = member['incoming']
-
-				try:
-					outqueue_sender[username_from].put(message)
-				except KeyError:
-					outqueue_sender[username_from] = Queue()
-					outqueue_sender[username_from].put(message)
-				try:
-					inqueue_receiver[username_from].put(message)
-				except KeyError:
-					inqueue_receiver[username_from] = Queue()
-					inqueue_receiver[username_from].put(message)
-
-			return {'status': 'OK', 'message': 'Message Sent to Group'}
-
-
-    def get_inbox(self, username):
-        s_fr = self.get_user(username)
-        incoming = s_fr['incoming']
-        msgs = {}
-        for users in incoming:
-            msgs[users] = []
-            while not incoming[users].empty():
-                msgs[users].append(s_fr['incoming'][users].get_nowait())
-
-        return {'status': 'OK', 'messages': msgs}
-
-    def add_group(self, sessionid, username_creator, groupname, members):
-        if sessionid not in self.sessions:
+#   ===================== Komunikasi dalam satu server =====================
+    def send_message(self,sessionid,username_from,username_dest,message):
+        if (sessionid not in self.sessions):
             return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        s_to = self.get_user(username_dest)
 
-        # Periksa apakah pengguna yang membuat grup adalah pengguna yang valid
-		
-        creator = self.get_user(username_creator)
-        if creator is False:
+        if (s_fr==False or s_to==False):
             return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
 
-        # Periksa apakah semua anggota grup adalah pengguna yang valid
-        # members = []
-        # for username in usernames:
-        #     user = self.get_user(username)
-        #     if user is False:
-        #         return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
-        #     members.append(user)
+        message = { 'msg_from': s_fr['nama'], 'msg_to': s_to['nama'], 'msg': message }
+        outqueue_sender = s_fr['outgoing']
+        inqueue_receiver = s_to['incoming']
+        try:	
+            outqueue_sender[username_from].put(message)
+        except KeyError:
+            outqueue_sender[username_from]=Queue()
+            outqueue_sender[username_from].put(message)
+        try:
+            inqueue_receiver[username_from].put(message)
+        except KeyError:
+            inqueue_receiver[username_from]=Queue()
+            inqueue_receiver[username_from].put(message)
+        return {'status': 'OK', 'message': 'Message Sent'}
+    
+    def send_group_message(self, sessionid, username_from, usernames_dest, message):
+        if (sessionid not in self.sessions):
+            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        if s_fr is False:
+            return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+        for username_dest in usernames_dest:
+            s_to = self.get_user(username_dest)
+            if s_to is False:
+                continue
+            message = {'msg_from': s_fr['nama'], 'msg_to': s_to['nama'], 'msg': message}
+            outqueue_sender = s_fr['outgoing']
+            inqueue_receiver = s_to['incoming']
+            try:    
+                outqueue_sender[username_from].put(message)
+            except KeyError:
+                outqueue_sender[username_from]=Queue()
+                outqueue_sender[username_from].put(message)
+            try:
+                inqueue_receiver[username_from].put(message)
+            except KeyError:
+                inqueue_receiver[username_from]=Queue()
+                inqueue_receiver[username_from].put(message)
+        return {'status': 'OK', 'message': 'Message Sent'}
+    
+    def get_inbox(self,username):
+        s_fr = self.get_user(username)
+        incoming = s_fr['incoming']
+        msgs={}
+        for users in incoming:
+            msgs[users]=[]
+            while not incoming[users].empty():
+                msgs[users].append(s_fr['incoming'][users].get_nowait())
+        return {'status': 'OK', 'messages': msgs}
 
-        # Buat grup baru dan tambahkan anggota ke dalam grup
-        group_id = str(uuid.uuid4())
-        self.groups[group_id] = {
-            'groupname': groupname,
-            'creator': creator,
-            'members': members
+    def send_file(self, sessionid, username_from, username_dest, filepath):
+        if sessionid not in self.sessions:
+            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        
+        s_fr = self.get_user(username_from)
+        s_to = self.get_user(username_dest)
+
+        if s_fr is False or s_to is False:
+            return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+
+        if not os.path.exists(filepath):
+            return {'status': 'ERROR', 'message': 'File not found'}
+
+        with open(filepath, 'rb') as file:
+            file_content = file.read()
+            encoded_content = base64.urlsafe_b64encode(file_content).decode('utf-8')  # Decode byte-string to UTF-8 string
+
+        filename = os.path.basename(filepath)
+        message = {
+            'msg_from': s_fr['nama'],
+            'msg_to': s_to['nama'],
+            'file_name': filename,
+            'file_content': encoded_content
         }
 
-        return {'status': 'OK', 'message': 'Group Created', 'group_id': group_id}
+        outqueue_sender = s_fr['outgoing']
+        inqueue_receiver = s_to['incoming']
+        try:
+            outqueue_sender[username_from].put(json.dumps(message))
+        except KeyError:
+            outqueue_sender[username_from] = Queue()
+            outqueue_sender[username_from].put(json.dumps(message))
+        try:
+            inqueue_receiver[username_from].put(json.dumps(message))
+        except KeyError:
+            inqueue_receiver[username_from] = Queue()
+            inqueue_receiver[username_from].put(json.dumps(message))
+        
+        # Simpan file ke folder dengan nama yang mencerminkan waktu pengiriman dan nama asli file
+        now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        folder_name = f"{now}_{username_from}_{username_dest}_{filename}"
+        folder_path = os.path.join('.', folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+        file_destination = os.path.join(folder_path, filename)
+        shutil.copyfile(filepath, file_destination)
+        
+        return {'status': 'OK', 'message': 'File Sent'}
 
-    def join_group(self, group_name, username):
-        if group_name not in self.groups:
-            return {'status': 'ERROR', 'message': 'Grup tidak ditemukan'}
+    def send_group_file(self, sessionid, username_from, usernames_dest, filepath):
+        if (sessionid not in self.sessions):
+            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        if s_fr is False:
+            return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+        if not os.path.exists(filepath):
+                return {'status': 'ERROR', 'message': 'File not found'}
+
+        with open(filepath, 'rb') as file:
+            file_content = file.read()
+            encoded_content = base64.urlsafe_b64encode(file_content).decode('utf-8')  # Decode byte-string to UTF-8 string
+
+        filename = os.path.basename(filepath)
+        for username_dest in usernames_dest:
+            s_to = self.get_user(username_dest)
+            if s_to is False:
+                continue
+            message = {
+                'msg_from': s_fr['nama'],
+                'msg_to': s_to['nama'],
+                'file_name': filename,
+                'file_content': encoded_content
+            }
+
+            outqueue_sender = s_fr['outgoing']
+            inqueue_receiver = s_to['incoming']
+            try:
+                outqueue_sender[username_from].put(json.dumps(message))
+            except KeyError:
+                outqueue_sender[username_from] = Queue()
+                outqueue_sender[username_from].put(json.dumps(message))
+            try:
+                inqueue_receiver[username_from].put(json.dumps(message))
+            except KeyError:
+                inqueue_receiver[username_from] = Queue()
+                inqueue_receiver[username_from].put(json.dumps(message))
+        
+            # Simpan file ke folder dengan nama yang mencerminkan waktu pengiriman dan nama asli file
+            now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            folder_name = f"{now}_{username_from}_{username_dest}_{filename}"
+            folder_path = os.path.join('.', folder_name)
+            os.makedirs(folder_path, exist_ok=True)
+            file_destination = os.path.join(folder_path, filename)
+            shutil.copyfile(filepath, file_destination)
+        
+        return {'status': 'OK', 'message': 'File Sent'}
+
+
+#   ===================== Komunikasi dengan server lain =====================
+    def add_realm(self, realm_id, realm_dest_address, realm_dest_port, data):
+        j = data.split()
+        j[0] = "recvrealm"
+        data = ' '.join(j)
+        data += "\r\n"
+        if realm_id in self.realms:
+            return {'status': 'ERROR', 'message': 'Realm sudah ada'}
+          
+        self.realms[realm_id] = RealmThreadCommunication(self, realm_dest_address, realm_dest_port)
+        result = self.realms[realm_id].sendstring(data)
+        return result
+
+    def recv_realm(self, realm_id, realm_dest_address, realm_dest_port, data):
+        self.realms[realm_id] = RealmThreadCommunication(self, realm_dest_address, realm_dest_port)
+        return {'status':'OK'}
+
+    def send_realm_message(self, sessionid, realm_id, username_from, username_dest, message, data):
+        if (sessionid not in self.sessions):
+            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        if (realm_id not in self.realms):
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        s_to = self.get_user(username_dest)
+        if (s_fr==False or s_to==False):
+            return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+        message = { 'msg_from': s_fr['nama'], 'msg_to': s_to['nama'], 'msg': message }
+        self.realms[realm_id].put(message)
+        
+        j = data.split()
+        j[0] = "recvrealmprivatemsg"
+        j[1] = username_from
+        data = ' '.join(j)
+        data += "\r\n"
+        self.realms[realm_id].sendstring(data)
+        return {'status': 'OK', 'message': 'Message Sent to Realm'}
+    
+    def send_file_realm(self, sessionid, realm_id, username_from, username_dest, filepath, data):
+        if (sessionid not in self.sessions):
+            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        if (realm_id not in self.realms):
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        s_to = self.get_user(username_dest)
+        if (s_fr==False or s_to==False):
+            return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+        
+        if not os.path.exists(filepath):
+            return {'status': 'ERROR', 'message': 'File not found'}
+
+        with open(filepath, 'rb') as file:
+            file_content = file.read()
+            encoded_content = base64.urlsafe_b64encode(file_content).decode('utf-8')
+        filename = os.path.basename(filepath)
+        message = {
+            'msg_from': s_fr['nama'],
+            'msg_to': s_to['nama'],
+            'file_name': filename,
+            'file_content': encoded_content
+        }
+        self.realms[realm_id].put(message)
+        
+        j = data.split()
+        j[0] = "recvrealmprivatemsg"
+        j[1] = username_from
+        data = ' '.join(j)
+        data += "\r\n"
+        self.realms[realm_id].sendstring(data)
+        return {'status': 'OK', 'message': 'File Sent to Realm'}
+
+    def recv_realm_message(self, realm_id, username_from, username_dest, message, data):
+        if (realm_id not in self.realms):
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        s_to = self.get_user(username_dest)
+        if (s_fr==False or s_to==False):
+            return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+        message = { 'msg_from': s_fr['nama'], 'msg_to': s_to['nama'], 'msg': message }
+        self.realms[realm_id].put(message)
+        
+        # Simpan file ke folder dengan nama yang mencerminkan waktu pengiriman dan nama asli file
+        now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        folder_name = f"{now}_{username_from}_{username_dest}_{filename}"
+        folder_path = os.path.join('.', folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+        file_destination = os.path.join(folder_path, filename)
+        shutil.copyfile(filepath, file_destination)
+        
+        return {'status': 'OK', 'message': 'Message Sent to Realm'}
+
+    def send_group_realm_message(self, sessionid, realm_id, username_from, usernames_to, message, data):
+        if (sessionid not in self.sessions):
+            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        if realm_id not in self.realms:
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        for username_to in usernames_to:
+            s_to = self.get_user(username_to)
+            message = {'msg_from': s_fr['nama'], 'msg_to': s_to['nama'], 'msg': message }
+            self.realms[realm_id].put(message)
+        
+        j = data.split()
+        j[0] = "recvrealmgroupmsg"
+        j[1] = username_from
+        data = ' '.join(j)
+        data +="\r\n"
+        self.realms[realm_id].sendstring(data)
+        return {'status': 'OK', 'message': 'Message Sent to Group in Realm'}
+    
+    def send_group_file_realm(self, sessionid, realm_id, username_from, usernames_to, filepath, data):
+        if (sessionid not in self.sessions):
+            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        if (realm_id not in self.realms):
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+
+        if (s_fr==False):
+                return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+            
+        if not os.path.exists(filepath):
+            return {'status': 'ERROR', 'message': 'File not found'}
+
+        with open(filepath, 'rb') as file:
+            file_content = file.read()
+            encoded_content = base64.urlsafe_b64encode(file_content).decode('utf-8')
+        
+        filename = os.path.basename(filepath)
+
+        for username_to in usernames_to:
+            s_to = self.get_user(username_to)
+            message = {
+                'msg_from': s_fr['nama'],
+                'msg_to': s_to['nama'],
+                'file_name': filename,
+                'file_content': encoded_content
+            }
+            self.realms[realm_id].put(message)
+        
+        j = data.split()
+        j[0] = "recvrealmgroupmsg"
+        j[1] = username_from
+        data = ' '.join(j)
+        data += "\r\n"
+        self.realms[realm_id].sendstring(data)
+        return {'status': 'OK', 'message': 'Message Sent to Group in Realm'}
+
+    def recv_group_realm_message(self, realm_id, username_from, usernames_to, message, data):
+        if realm_id not in self.realms:
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        for username_to in usernames_to:
+            s_to = self.get_user(username_to)
+            message = {'msg_from': s_fr['nama'], 'msg_to': s_to['nama'], 'msg': message }
+            self.realms[realm_id].put(message)
+        return {'status': 'OK', 'message': 'Message Sent to Group in Realm'}
+
+    def get_realm_inbox(self, username,realmid):
+        if (realmid not in self.realms):
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
         s_fr = self.get_user(username)
-        if s_fr == False:
-            return {'status': 'ERROR', 'message': 'User tidak ditemukan'}
-        self.groups[group_name].append(username)
-        return {'status': 'OK', 'message': 'Bergabung ke grup berhasil'}
+        result = self.realms[realmid].sendstring("getrealmchat {} {}\r\n".format(realmid, username))
+        return result
+    def get_realm_chat(self, realmid, username):
+        s_fr = self.get_user(username)
+        msgs = []
+        while not self.realms[realmid].chat[s_fr['nama']].empty():
+            msgs.append(self.realms[realmid].chat[s_fr['nama']].get_nowait())
+        return {'status': 'OK', 'messages': msgs}
 
-    def send_group_message(self, group_name, username, message):
-        if group_name not in self.groups:
-            return {'status': 'ERROR', 'message': 'Grup tidak ditemukan'}
-        if username not in self.users:
-            return {'status': 'ERROR', 'message': 'User tidak ditemukan'}
-        members = self.groups[group_name]
-        for member in members:
-            if member != username:
-                self.send_message(None, username, member, message)
-        return {'status': 'OK', 'message': 'Pesan grup berhasil dikirim'}
-
-    def get_group_inbox(self, group_name, username):
-        if group_name not in self.groups:
-            return {'status': 'ERROR', 'message': 'Grup tidak ditemukan'}
-        if username not in self.users:
-            return {'status': 'ERROR', 'message': 'User tidak ditemukan'}
-        messages = []
-        for member in self.groups[group_name]:
-            if member != username:
-                inbox = self.users[member]['incoming'].get(username, Queue())
-                while not inbox.empty():
-                    messages.append(inbox.get_nowait())
-        return {'status': 'OK', 'messages': messages}
-
-
-if __name__ == "__main__":
+if __name__=="__main__":
     j = Chat()
     sesi = j.proses("auth messi surabaya")
+    print(sesi)
+    sesi2 = j.proses("auth henderson surabaya")
     tokenid = sesi['tokenid']
-    print(j.proses("addgroup {} mygroup henderson lineker" . format(tokenid)))
-    # Mengirim pesan ke grup 'mygroup'
-    print(j.proses("send {} mygroup hello semua!" . format(tokenid)))
+    # tokenid2 = sesi2['tokenid']
+    print(j.proses("send {} henderson hello gimana kabarnya son " . format(tokenid)))
+    # print(j.proses("send {} messi hello gimana kabarnya mess " . format(tokenid)))
+
+    #print j.send_message(tokenid,'messi','henderson','hello son')
+    #print j.send_message(tokenid,'henderson','messi','hello si')
+    #print j.send_message(tokenid,'lineker','messi','hello si dari lineker')
+
+
+    # print("isi mailbox dari messi")
+    # print(j.get_inbox('messi'))
+    print("isi mailbox dari henderson")
+    print(j.get_inbox('henderson'))

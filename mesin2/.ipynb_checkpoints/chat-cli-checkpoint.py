@@ -1,10 +1,8 @@
 import socket
-import os
 import json
-from chat import Chat
 
 TARGET_IP = "172.16.16.102"
-TARGET_PORT = 8891
+TARGET_PORT = 8890
 
 class ChatClient:
     def __init__(self):
@@ -31,19 +29,32 @@ class ChatClient:
                 for w in j[2:]:
                     message="{} {}" . format(message,w)
                 return self.send_message(usernameto,message)
+            elif (command=='sendfile'):
+                usernameto = j[1].strip()
+                filepath = j[2].strip()
+                return self.send_file(usernameto,filepath)
             elif (command=='sendgroup'):
                 usernamesto = j[1].strip()
                 message=""
                 for w in j[2:]:
                     message="{} {}" . format(message,w)
                 return self.send_group_message(usernamesto,message)
-            elif (command == 'sendrealm'):
+            elif (command=='sendgroupfile'):
+                usernamesto = j[1].strip()
+                filepath = j[2].strip()
+                return self.send_group_file(usernamesto,filepath)
+            elif (command == 'sendprivaterealm'):
                 realmid = j[1].strip()
                 username_to = j[2].strip()
                 message = ""
                 for w in j[3:]:
                     message = "{} {}".format(message, w)
                 return self.send_realm_message(realmid, username_to, message)
+            elif (command=='sendfilerealm'):
+                realmid = j[1].strip()
+                usernameto = j[2].strip()
+                filepath = j[3].strip()
+                return self.send_file_realm(realmid, usernameto,filepath)
             elif (command=='sendgrouprealm'):
                 realmid = j[1].strip()
                 usernamesto = j[2].strip()
@@ -51,15 +62,16 @@ class ChatClient:
                 for w in j[3:]:
                     message="{} {}" . format(message,w)
                 return self.send_group_realm_message(realmid, usernamesto,message)
+            elif (command=='sendgroupfilerealm'):
+                realmid = j[1].strip()
+                usernamesto = j[2].strip()
+                filepath = j[3].strip()
+                return self.send_group_file_realm(realmid, usernamesto,filepath)
             elif (command=='inbox'):
                 return self.inbox()
-            elif (command == 'realminbox'):
+            elif (command == 'getrealminbox'):
                 realmid = j[1].strip()
                 return self.realm_inbox(realmid)
-            elif (command=='logout'):
-                return self.logout()
-            elif (command=='info'):
-                return self.info()
             else:
                 return "*Maaf, command tidak benar"
         except IndexError:
@@ -110,14 +122,35 @@ class ChatClient:
             return "message sent to {}" . format(usernameto)
         else:
             return "Error, {}" . format(result['message'])
+        
+    def send_file(self, usernameto="xxx", filepath="xxx"):
+        if (self.tokenid==""):
+            return "Error, not authorized"
+        string="sendfile {} {} {} \r\n" . format(self.tokenid,usernameto,filepath)
+        print(string)
+        result = self.sendstring(string)
+        if result['status']=='OK':
+            return "file sent to {}" . format(usernameto)
+        else:
+            return "Error, {}" . format(result['message'])
 
     def send_realm_message(self, realmid, username_to, message):
         if (self.tokenid==""):
             return "Error, not authorized"
-        string="sendrealm {} {} {} \r\n" . format(self.tokenid, realmid, username_to, message)
+        string="sendprivaterealm {} {} {} {}\r\n" . format(self.tokenid, realmid, username_to, message)
         result = self.sendstring(string)
         if result['status']=='OK':
             return "Message sent to realm {}".format(realmid)
+        else:
+            return "Error, {}".format(result['message'])
+        
+    def send_file_realm(self, realmid, usernameto, filepath):
+        if (self.tokenid==""):
+            return "Error, not authorized"
+        string="sendfilerealm {} {} {} {}\r\n" . format(self.tokenid, realmid, usernameto, filepath)
+        result = self.sendstring(string)
+        if result['status']=='OK':
+            return "File sent to realm {}".format(realmid)
         else:
             return "Error, {}".format(result['message'])
 
@@ -131,21 +164,43 @@ class ChatClient:
             return "message sent to {}" . format(usernames_to)
         else:
             return "Error, {}" . format(result['message'])
-
-    def send_group_realm_message(self, realmid, usernamesto, message):
-        if self.tokenid=="":
+        
+    def send_group_file(self, usernames_to="xxx", filepath="xxx"):
+        if (self.tokenid==""):
             return "Error, not authorized"
-        string="sendgrouprealm {} {} {} {} \r\n" . format(self.tokenid, realmid, ','.join(usernamesto), message)
+        string="sendgroupfile {} {} {} \r\n" . format(self.tokenid,usernames_to,filepath)
         print(string)
         result = self.sendstring(string)
         if result['status']=='OK':
-            return "message sent to group {} in realm {}" .format(usernamesto, realmid)
+            return "file sent to {}" . format(usernames_to)
+        else:
+            return "Error, {}" . format(result['message'])
+
+    def send_group_realm_message(self, realmid, usernames_to, message):
+        if self.tokenid=="":
+            return "Error, not authorized"
+        string="sendgrouprealm {} {} {} {} \r\n" . format(self.tokenid, realmid, usernames_to, message)
+        print(string)
+        result = self.sendstring(string)
+        if result['status']=='OK':
+            return "message sent to group {} in realm {}" .format(usernames_to, realmid)
+        else:
+            return "Error {}".format(result['message'])
+        
+    def send_group_file_realm(self, realmid, usernames_to, filepath):
+        if self.tokenid=="":
+            return "Error, not authorized"
+        string="sendgrouprealmfile {} {} {} {} \r\n" . format(self.tokenid, realmid, usernames_to, filepath)
+        print(string)
+        result = self.sendstring(string)
+        if result['status']=='OK':
+            return "file sent to group {} in realm {}" .format(usernames_to, realmid)
         else:
             return "Error {}".format(result['message'])
 
     def inbox(self):
         if (self.tokenid==""):
-           return "Error, not authorized"
+            return "Error, not authorized"
         string="inbox {} \r\n" . format(self.tokenid)
         result = self.sendstring(string)
         if result['status']=='OK':
@@ -156,7 +211,7 @@ class ChatClient:
     def realm_inbox(self, realmid):
         if (self.tokenid==""):
             return "Error, not authorized"
-        string="realminbox {} {} \r\n" . format(self.tokenid, realmid)
+        string="getrealminbox {} {} \r\n" . format(self.tokenid, realmid)
         print("Sending: " + string)
         result = self.sendstring(string)
         print("Received: " + str(result))
@@ -165,30 +220,10 @@ class ChatClient:
         else:
             return "Error, {}".format(result['message'])
 
-    def logout(self):
-        string="logout \r\n"
-        result = self.sendstring(string)
-        if result['status']=='OK':
-            self.tokenid=""
-            return "Logout Berhasil"
-        else:
-            return "Error, {}" . format(result['message'])
-
-    def info(self):
-        string="info {} \r\n"
-        result = self.sendstring(string)
-        list_user_aktif="User yang Aktif:\n"
-        if result['status']=='OK':
-            list_user_aktif += f"{result['message']}"
-        return list_user_aktif
-
 if __name__=="__main__":
     cc = ChatClient()
-    c = Chat()
 
     while True:
         print("\n")
-        print("List User: " + str(c.users.keys()) + " dan Passwordnya: " + str(c.users['messi']['password']) + ", " + str(c.users['henderson']['password']) + ", " + str(c.users['lineker']['password']))
-        print("Command:\n1. Login: auth [username] [password]\n2. Menambah realm: addrealm [nama_realm] [address] [port]\n3. Mengirim pesan: send [username to] [message]\n4. Mengirim pesan ke realm: sendrealm [name_realm] [username to] [message]\n5. Mengirim pesan ke group: sendgroup [usernames to] [message]\n6. Mengirim pesan ke group realm: sendgrouprealm [name_realm] [usernames to] [message]\n7. Melihat pesan: inbox\n8. Melihat pesan realm: realminbox [nama_realm]\n9. Logout: logout\n10. Melihat user yang aktif: info\n")
         cmdline = input("Command {}:" . format(cc.tokenid))
         print(cc.proses(cmdline))

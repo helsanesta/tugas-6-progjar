@@ -6,6 +6,8 @@ import logging
 from queue import  Queue
 import threading 
 import socket
+import shutil
+from datetime import datetime
 
 class RealmThreadCommunication(threading.Thread):
     def __init__(self, chats, realm_dest_address, realm_dest_port):
@@ -296,7 +298,15 @@ class Chat:
         except KeyError:
             inqueue_receiver[username_from] = Queue()
             inqueue_receiver[username_from].put(json.dumps(message))
-
+        
+        # Simpan file ke folder dengan nama yang mencerminkan waktu pengiriman dan nama asli file
+        now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        folder_name = f"{now}_{username_from}_{username_dest}_{filename}"
+        folder_path = os.path.join('.', folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+        file_destination = os.path.join(folder_path, filename)
+        shutil.copyfile(filepath, file_destination)
+        
         return {'status': 'OK', 'message': 'File Sent'}
 
     def send_group_file(self, sessionid, username_from, usernames_dest, filepath):
@@ -336,7 +346,15 @@ class Chat:
             except KeyError:
                 inqueue_receiver[username_from] = Queue()
                 inqueue_receiver[username_from].put(json.dumps(message))
-
+        
+            # Simpan file ke folder dengan nama yang mencerminkan waktu pengiriman dan nama asli file
+            now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            folder_name = f"{now}_{username_from}_{username_dest}_{filename}"
+            folder_path = os.path.join('.', folder_name)
+            os.makedirs(folder_path, exist_ok=True)
+            file_destination = os.path.join(folder_path, filename)
+            shutil.copyfile(filepath, file_destination)
+        
         return {'status': 'OK', 'message': 'File Sent'}
 
 
@@ -502,3 +520,20 @@ class Chat:
 
 if __name__=="__main__":
     j = Chat()
+    sesi = j.proses("auth messi surabaya")
+    print(sesi)
+    sesi2 = j.proses("auth henderson surabaya")
+    tokenid = sesi['tokenid']
+    # tokenid2 = sesi2['tokenid']
+    print(j.proses("send {} henderson hello gimana kabarnya son " . format(tokenid)))
+    # print(j.proses("send {} messi hello gimana kabarnya mess " . format(tokenid)))
+
+    #print j.send_message(tokenid,'messi','henderson','hello son')
+    #print j.send_message(tokenid,'henderson','messi','hello si')
+    #print j.send_message(tokenid,'lineker','messi','hello si dari lineker')
+
+
+    # print("isi mailbox dari messi")
+    # print(j.get_inbox('messi'))
+    print("isi mailbox dari henderson")
+    print(j.get_inbox('henderson'))

@@ -200,7 +200,7 @@ class ChatClient:
 
     def inbox(self):
         if (self.tokenid==""):
-           return "Error, not authorized"
+            return "Error, not authorized"
         string="inbox {} \r\n" . format(self.tokenid)
         result = self.sendstring(string)
         if result['status']=='OK':
