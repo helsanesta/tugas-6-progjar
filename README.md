@@ -26,7 +26,7 @@ B. Komunikasi dalam satu server
   ```sendfile henderson pokijan.jpg```
   - send group file (banyak user) + simpan file <br>
   ```sendgroupfile <user_dest 1>,<user_dest 2>,...,<user_dest n> <file path>``` <br>
-  ```sendgroup henderson,lineker pokijan.jpg```
+  ```sendgroupfile henderson,lineker pokijan.jpg```
   - inbox <br>
   ```inbox```
 
@@ -34,7 +34,7 @@ C. Komunikasi dengan server lain
   - addrealm <br>
   ```addrealm <nama_realm> <ip_dest> <port_dest>``` <br>
   ```addrealm realm1 172.16.16.102 8890```
-  - send private message realm
+  - send private message realm <br>
   ```sendprivaterealm <nama_realm> <user_dest> <message>``` <br>
   ```sendprivaterealm realm1 henderson bagaimana son di mesin 2```
   - send group message realm <br>
