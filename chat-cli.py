@@ -1,5 +1,8 @@
 import socket
 import json
+import base64
+import json
+import os
 
 TARGET_IP = "172.16.16.101"
 TARGET_PORT = 8889
@@ -82,7 +85,7 @@ class ChatClient:
             self.sock.sendall(string.encode())
             receivemsg = ""
             while True:
-                data = self.sock.recv(64)
+                data = self.sock.recv(1024)
                 print("diterima dari server",data)
                 if (data):
                     receivemsg = "{}{}" . format(receivemsg,data.decode())  #data harus didecode agar dapat di operasikan dalam bentuk string
@@ -126,8 +129,15 @@ class ChatClient:
     def send_file(self, usernameto="xxx", filepath="xxx"):
         if (self.tokenid==""):
             return "Error, not authorized"
-        string="sendfile {} {} {} \r\n" . format(self.tokenid,usernameto,filepath)
-        print(string)
+
+        if not os.path.exists(filepath):
+            return {'status': 'ERROR', 'message': 'File not found'}
+        
+        with open(filepath, 'rb') as file:
+            file_content = file.read()
+            encoded_content = base64.b64encode(file_content)  # Decode byte-string to UTF-8 string
+        string="sendfile {} {} {} {}\r\n" . format(self.tokenid,usernameto,filepath,encoded_content)
+
         result = self.sendstring(string)
         if result['status']=='OK':
             return "file sent to {}" . format(usernameto)
@@ -147,7 +157,13 @@ class ChatClient:
     def send_file_realm(self, realmid, usernameto, filepath):
         if (self.tokenid==""):
             return "Error, not authorized"
-        string="sendfilerealm {} {} {} {}\r\n" . format(self.tokenid, realmid, usernameto, filepath)
+        if not os.path.exists(filepath):
+            return {'status': 'ERROR', 'message': 'File not found'}
+        
+        with open(filepath, 'rb') as file:
+            file_content = file.read()
+            encoded_content = base64.b64encode(file_content)  # Decode byte-string to UTF-8 string
+        string="sendfilerealm {} {} {} {} {}\r\n" . format(self.tokenid, realmid, usernameto, filepath, encoded_content)
         result = self.sendstring(string)
         if result['status']=='OK':
             return "File sent to realm {}".format(realmid)
@@ -168,8 +184,16 @@ class ChatClient:
     def send_group_file(self, usernames_to="xxx", filepath="xxx"):
         if (self.tokenid==""):
             return "Error, not authorized"
-        string="sendgroupfile {} {} {} \r\n" . format(self.tokenid,usernames_to,filepath)
-        print(string)
+        
+        if not os.path.exists(filepath):
+            return {'status': 'ERROR', 'message': 'File not found'}
+        
+        with open(filepath, 'rb') as file:
+            file_content = file.read()
+            encoded_content = base64.b64encode(file_content)  # Decode byte-string to UTF-8 string
+
+        string="sendgroupfile {} {} {} {}\r\n" . format(self.tokenid,usernames_to,filepath, encoded_content)
+
         result = self.sendstring(string)
         if result['status']=='OK':
             return "file sent to {}" . format(usernames_to)
@@ -180,7 +204,7 @@ class ChatClient:
         if self.tokenid=="":
             return "Error, not authorized"
         string="sendgrouprealm {} {} {} {} \r\n" . format(self.tokenid, realmid, usernames_to, message)
-        print(string)
+
         result = self.sendstring(string)
         if result['status']=='OK':
             return "message sent to group {} in realm {}" .format(usernames_to, realmid)
@@ -190,8 +214,15 @@ class ChatClient:
     def send_group_file_realm(self, realmid, usernames_to, filepath):
         if self.tokenid=="":
             return "Error, not authorized"
-        string="sendgrouprealmfile {} {} {} {} \r\n" . format(self.tokenid, realmid, usernames_to, filepath)
-        print(string)
+
+        if not os.path.exists(filepath):
+            return {'status': 'ERROR', 'message': 'File not found'}
+        
+        with open(filepath, 'rb') as file:
+            file_content = file.read()
+            encoded_content = base64.b64encode(file_content)  # Decode byte-string to UTF-8 string
+        string="sendgroupfilerealm {} {} {} {} {}\r\n" . format(self.tokenid, realmid, usernames_to, filepath, encoded_content)
+ 
         result = self.sendstring(string)
         if result['status']=='OK':
             return "file sent to group {} in realm {}" .format(usernames_to, realmid)
@@ -222,7 +253,7 @@ class ChatClient:
 
 if __name__=="__main__":
     cc = ChatClient()
-
+    
     while True:
         print("\n")
         cmdline = input("Command {}:" . format(cc.tokenid))

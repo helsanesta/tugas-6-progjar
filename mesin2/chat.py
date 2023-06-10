@@ -1,5 +1,6 @@
 import base64
 import os
+from os.path import join, dirname, realpath
 import json
 import uuid
 import logging
@@ -89,16 +90,18 @@ class Chat:
                 sessionid = j[1].strip()
                 usernameto = j[2].strip()
                 filepath = j[3].strip()
+                encoded_file = j[4].strip()
                 usernamefrom = self.sessions[sessionid]['username']
                 logging.warning("SENDFILE: session {} send file from {} to {}" . format(sessionid, usernamefrom, usernameto))
-                return self.send_file(sessionid, usernamefrom, usernameto, filepath)
+                return self.send_file(sessionid, usernamefrom, usernameto, filepath, encoded_file)
             elif (command=='sendgroupfile'):
                 sessionid = j[1].strip()
                 usernamesto = j[2].strip().split(',')
                 filepath = j[3].strip()
+                encoded_file = j[4].strip()
                 usernamefrom = self.sessions[sessionid]['username']
                 logging.warning("SENDGROUPFILE: session {} send file from {} to {}" . format(sessionid, usernamefrom, usernamesto))
-                return self.send_group_file(sessionid, usernamefrom, usernamesto, filepath)
+                return self.send_group_file(sessionid, usernamefrom, usernamesto, filepath, encoded_file)
 
 
   #   ===================== Komunikasi dengan server lain =====================           
@@ -123,14 +126,6 @@ class Chat:
                 usernamefrom = self.sessions[sessionid]['username']
                 logging.warning("SENDPRIVATEREALM: session {} send message from {} to {} in realm {}".format(sessionid, usernamefrom, usernameto, realm_id))
                 return self.send_realm_message(sessionid, realm_id, usernamefrom, usernameto, message, data)
-            elif (command == 'sendfilerealm'):
-                sessionid = j[1].strip()
-                realm_id = j[2].strip()
-                usernameto = j[3].strip()
-                filepath = j[4].strip()
-                usernamefrom = self.sessions[sessionid]['username']
-                logging.warning("SENDFILEREALM: session {} send file from {} to {} in realm {}".format(sessionid, usernamefrom, usernameto, realm_id))
-                return self.send_file_realm(sessionid, realm_id, usernamefrom, usernameto, filepath, data)
             elif (command == 'recvrealmprivatemsg'):
                 usernamefrom = j[1].strip()
                 realm_id = j[2].strip()
@@ -141,6 +136,23 @@ class Chat:
                 print(message)
                 logging.warning("RECVREALMPRIVATEMSG: recieve message from {} to {} in realm {}".format( usernamefrom, usernameto, realm_id))
                 return self.recv_realm_message(realm_id, usernamefrom, usernameto, message, data)
+            elif (command == 'sendfilerealm'):
+                sessionid = j[1].strip()
+                realm_id = j[2].strip()
+                usernameto = j[3].strip()
+                filepath = j[4].strip()
+                encoded_file = j[5].strip()
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SENDFILEREALM: session {} send file from {} to {} in realm {}".format(sessionid, usernamefrom, usernameto, realm_id))
+                return self.send_file_realm(sessionid, realm_id, usernamefrom, usernameto, filepath, encoded_file, data)
+            elif (command == 'recvfilerealm'):
+                usernamefrom = j[1].strip()
+                realm_id = j[2].strip()
+                usernameto = j[3].strip()
+                filepath = j[4].strip()
+                encoded_file = j[5].strip()
+                logging.warning("RECVFILEREALM: recieve file from {} to {} in realm {}".format( usernamefrom, usernameto, realm_id))
+                return self.recv_file_realm( realm_id, usernamefrom, usernameto, filepath, encoded_file, data)
             elif (command == 'sendgrouprealm'):
                 sessionid = j[1].strip()
                 realm_id = j[2].strip()
@@ -151,14 +163,6 @@ class Chat:
                 usernamefrom = self.sessions[sessionid]['username']
                 logging.warning("SENDGROUPREALM: session {} send message from {} to {} in realm {}".format(sessionid, usernamefrom, usernamesto, realm_id))
                 return self.send_group_realm_message(sessionid, realm_id, usernamefrom,usernamesto, message,data)
-            elif (command == 'sendgroupfilerealm'):
-                sessionid = j[1].strip()
-                realm_id = j[2].strip()
-                usernamesto = j[3].strip().split(',')
-                filepath = j[4].strip()
-                usernamefrom = self.sessions[sessionid]['username']
-                logging.warning("SENDGROUPFILEREALM: session {} send file from {} to {} in realm {}".format(sessionid, usernamefrom, usernamesto, realm_id))
-                return self.send_group_file_realm(sessionid, realm_id, usernamefrom,usernamesto, filepath, data)
             elif (command == 'recvrealmgroupmsg'):
                 usernamefrom = j[1].strip()
                 realm_id = j[2].strip()
@@ -168,6 +172,23 @@ class Chat:
                     message = "{} {}".format(message, w) 
                 logging.warning("RECVGROUPREALM: send message from {} to {} in realm {}".format(usernamefrom, usernamesto, realm_id))
                 return self.recv_group_realm_message(realm_id, usernamefrom,usernamesto, message,data)
+            elif (command == 'sendgroupfilerealm'):
+                sessionid = j[1].strip()
+                realm_id = j[2].strip()
+                usernamesto = j[3].strip().split(',')
+                filepath = j[4].strip()
+                encoded_file = j[5].strip()
+                usernamefrom = self.sessions[sessionid]['username']
+                logging.warning("SENDGROUPFILEREALM: session {} send file from {} to {} in realm {}".format(sessionid, usernamefrom, usernamesto, realm_id))
+                return self.send_group_file_realm(sessionid, realm_id, usernamefrom, usernamesto, filepath, encoded_file, data)
+            elif (command == 'recvgroupfilerealm'):
+                usernamefrom = j[1].strip()
+                realm_id = j[2].strip()
+                usernamesto = j[3].strip().split(',')
+                filepath = j[4].strip()
+                encoded_file = j[5].strip()
+                logging.warning("SENDGROUPFILEREALM: recieve file from {} to {} in realm {}".format(usernamefrom, usernamesto, realm_id))
+                return self.recv_group_file_realm(realm_id, usernamefrom, usernamesto, filepath, encoded_file, data)
             elif (command == 'getrealminbox'):
                 sessionid = j[1].strip()
                 realmid = j[2].strip()
@@ -261,7 +282,7 @@ class Chat:
                 msgs[users].append(s_fr['incoming'][users].get_nowait())
         return {'status': 'OK', 'messages': msgs}
 
-    def send_file(self, sessionid, username_from, username_dest, filepath):
+    def send_file(self, sessionid, username_from, username_dest, filepath ,encoded_file):
         if sessionid not in self.sessions:
             return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
         
@@ -271,19 +292,12 @@ class Chat:
         if s_fr is False or s_to is False:
             return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
 
-        if not os.path.exists(filepath):
-            return {'status': 'ERROR', 'message': 'File not found'}
-
-        with open(filepath, 'rb') as file:
-            file_content = file.read()
-            encoded_content = base64.urlsafe_b64encode(file_content).decode('utf-8')  # Decode byte-string to UTF-8 string
-
         filename = os.path.basename(filepath)
         message = {
             'msg_from': s_fr['nama'],
             'msg_to': s_to['nama'],
             'file_name': filename,
-            'file_content': encoded_content
+            'file_content': encoded_file
         }
 
         outqueue_sender = s_fr['outgoing']
@@ -302,25 +316,27 @@ class Chat:
         # Simpan file ke folder dengan nama yang mencerminkan waktu pengiriman dan nama asli file
         now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         folder_name = f"{now}_{username_from}_{username_dest}_{filename}"
-        folder_path = os.path.join('.', folder_name)
+        folder_path = join(dirname(realpath(__file__)), 'files/')
+        os.makedirs(folder_path, exist_ok=True)
+        folder_path = join(folder_path, folder_name)
         os.makedirs(folder_path, exist_ok=True)
         file_destination = os.path.join(folder_path, filename)
-        shutil.copyfile(filepath, file_destination)
+        if 'b' in encoded_file[0]:
+            msg = encoded_file[2:-1]
+
+            with open(file_destination, "wb") as fh:
+                fh.write(base64.b64decode(msg))
+        else:
+            tail = encoded_file.split()
         
         return {'status': 'OK', 'message': 'File Sent'}
 
-    def send_group_file(self, sessionid, username_from, usernames_dest, filepath):
+    def send_group_file(self, sessionid, username_from, usernames_dest, filepath, encoded_file):
         if (sessionid not in self.sessions):
             return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
         s_fr = self.get_user(username_from)
         if s_fr is False:
             return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
-        if not os.path.exists(filepath):
-                return {'status': 'ERROR', 'message': 'File not found'}
-
-        with open(filepath, 'rb') as file:
-            file_content = file.read()
-            encoded_content = base64.urlsafe_b64encode(file_content).decode('utf-8')  # Decode byte-string to UTF-8 string
 
         filename = os.path.basename(filepath)
         for username_dest in usernames_dest:
@@ -331,7 +347,7 @@ class Chat:
                 'msg_from': s_fr['nama'],
                 'msg_to': s_to['nama'],
                 'file_name': filename,
-                'file_content': encoded_content
+                'file_content': encoded_file
             }
 
             outqueue_sender = s_fr['outgoing']
@@ -350,10 +366,18 @@ class Chat:
             # Simpan file ke folder dengan nama yang mencerminkan waktu pengiriman dan nama asli file
             now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
             folder_name = f"{now}_{username_from}_{username_dest}_{filename}"
-            folder_path = os.path.join('.', folder_name)
+            folder_path = join(dirname(realpath(__file__)), 'files/')
+            os.makedirs(folder_path, exist_ok=True)
+            folder_path = join(folder_path, folder_name)
             os.makedirs(folder_path, exist_ok=True)
             file_destination = os.path.join(folder_path, filename)
-            shutil.copyfile(filepath, file_destination)
+            if 'b' in encoded_file[0]:
+                msg = encoded_file[2:-1]
+
+                with open(file_destination, "wb") as fh:
+                    fh.write(base64.b64decode(msg))
+            else:
+                tail = encoded_file.split()
         
         return {'status': 'OK', 'message': 'File Sent'}
 
@@ -394,39 +418,6 @@ class Chat:
         data += "\r\n"
         self.realms[realm_id].sendstring(data)
         return {'status': 'OK', 'message': 'Message Sent to Realm'}
-    
-    def send_file_realm(self, sessionid, realm_id, username_from, username_dest, filepath, data):
-        if (sessionid not in self.sessions):
-            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
-        if (realm_id not in self.realms):
-            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
-        s_fr = self.get_user(username_from)
-        s_to = self.get_user(username_dest)
-        if (s_fr==False or s_to==False):
-            return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
-        
-        if not os.path.exists(filepath):
-            return {'status': 'ERROR', 'message': 'File not found'}
-
-        with open(filepath, 'rb') as file:
-            file_content = file.read()
-            encoded_content = base64.urlsafe_b64encode(file_content).decode('utf-8')
-        filename = os.path.basename(filepath)
-        message = {
-            'msg_from': s_fr['nama'],
-            'msg_to': s_to['nama'],
-            'file_name': filename,
-            'file_content': encoded_content
-        }
-        self.realms[realm_id].put(message)
-        
-        j = data.split()
-        j[0] = "recvrealmprivatemsg"
-        j[1] = username_from
-        data = ' '.join(j)
-        data += "\r\n"
-        self.realms[realm_id].sendstring(data)
-        return {'status': 'OK', 'message': 'File Sent to Realm'}
 
     def recv_realm_message(self, realm_id, username_from, username_dest, message, data):
         if (realm_id not in self.realms):
@@ -438,6 +429,82 @@ class Chat:
         message = { 'msg_from': s_fr['nama'], 'msg_to': s_to['nama'], 'msg': message }
         self.realms[realm_id].put(message)
         return {'status': 'OK', 'message': 'Message Sent to Realm'}
+    
+    def send_file_realm(self, sessionid, realm_id, username_from, username_dest, filepath, encoded_file, data):
+        if (sessionid not in self.sessions):
+            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        if (realm_id not in self.realms):
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        s_to = self.get_user(username_dest)
+        if (s_fr==False or s_to==False):
+            return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+        
+        filename = os.path.basename(filepath)
+        message = {
+            'msg_from': s_fr['nama'],
+            'msg_to': s_to['nama'],
+            'file_name': filename,
+            'file_content': encoded_file
+        }
+        self.realms[realm_id].put(message)
+        
+        now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        folder_name = f"{now}_{username_from}_{username_dest}_{filename}"
+        folder_path = join(dirname(realpath(__file__)), 'files/')
+        os.makedirs(folder_path, exist_ok=True)
+        folder_path = join(folder_path, folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+        file_destination = os.path.join(folder_path, filename)
+        if 'b' in encoded_file[0]:
+            msg = encoded_file[2:-1]
+
+            with open(file_destination, "wb") as fh:
+                fh.write(base64.b64decode(msg))
+        else:
+            tail = encoded_file.split()
+        print(file_destination)
+        j = data.split()
+        j[0] = "recvfilerealm"
+        j[1] = username_from
+        data = ' '.join(j)
+        data += "\r\n"
+        self.realms[realm_id].sendstring(data)
+        return {'status': 'OK', 'message': 'File Sent to Realm'}
+
+    def recv_file_realm(self, realm_id, username_from, username_dest, filepath, encoded_file, data):
+        if (realm_id not in self.realms):
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+        s_to = self.get_user(username_dest)
+        if (s_fr==False or s_to==False):
+            return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+        
+        filename = os.path.basename(filepath)
+        message = {
+            'msg_from': s_fr['nama'],
+            'msg_to': s_to['nama'],
+            'file_name': filename,
+            'file_content': encoded_file
+        }
+        self.realms[realm_id].put(message)
+        
+        now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        folder_name = f"{now}_{username_from}_{username_dest}_{filename}"
+        folder_path = join(dirname(realpath(__file__)), 'files/')
+        os.makedirs(folder_path, exist_ok=True)
+        folder_path = join(folder_path, folder_name)
+        os.makedirs(folder_path, exist_ok=True)
+        file_destination = os.path.join(folder_path, filename)
+        if 'b' in encoded_file[0]:
+            msg = encoded_file[2:-1]
+
+            with open(file_destination, "wb") as fh:
+                fh.write(base64.b64decode(msg))
+        else:
+            tail = encoded_file.split()
+        
+        return {'status': 'OK', 'message': 'File Received to Realm'}
 
     def send_group_realm_message(self, sessionid, realm_id, username_from, usernames_to, message, data):
         if (sessionid not in self.sessions):
@@ -457,43 +524,6 @@ class Chat:
         data +="\r\n"
         self.realms[realm_id].sendstring(data)
         return {'status': 'OK', 'message': 'Message Sent to Group in Realm'}
-    
-    def send_group_file_realm(self, sessionid, realm_id, username_from, usernames_to, filepath, data):
-        if (sessionid not in self.sessions):
-            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
-        if (realm_id not in self.realms):
-            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
-        s_fr = self.get_user(username_from)
-
-        if (s_fr==False):
-                return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
-            
-        if not os.path.exists(filepath):
-            return {'status': 'ERROR', 'message': 'File not found'}
-
-        with open(filepath, 'rb') as file:
-            file_content = file.read()
-            encoded_content = base64.urlsafe_b64encode(file_content).decode('utf-8')
-        
-        filename = os.path.basename(filepath)
-
-        for username_to in usernames_to:
-            s_to = self.get_user(username_to)
-            message = {
-                'msg_from': s_fr['nama'],
-                'msg_to': s_to['nama'],
-                'file_name': filename,
-                'file_content': encoded_content
-            }
-            self.realms[realm_id].put(message)
-        
-        j = data.split()
-        j[0] = "recvrealmgroupmsg"
-        j[1] = username_from
-        data = ' '.join(j)
-        data += "\r\n"
-        self.realms[realm_id].sendstring(data)
-        return {'status': 'OK', 'message': 'Message Sent to Group in Realm'}
 
     def recv_group_realm_message(self, realm_id, username_from, usernames_to, message, data):
         if realm_id not in self.realms:
@@ -503,6 +533,86 @@ class Chat:
             s_to = self.get_user(username_to)
             message = {'msg_from': s_fr['nama'], 'msg_to': s_to['nama'], 'msg': message }
             self.realms[realm_id].put(message)
+        return {'status': 'OK', 'message': 'Message Sent to Group in Realm'}
+
+    def send_group_file_realm(self, sessionid, realm_id, username_from, usernames_to, filepath, encoded_file, data):
+        if (sessionid not in self.sessions):
+            return {'status': 'ERROR', 'message': 'Session Tidak Ditemukan'}
+        if (realm_id not in self.realms):
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+
+        if (s_fr==False):
+                return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+            
+        filename = os.path.basename(filepath)
+        for username_to in usernames_to:
+            s_to = self.get_user(username_to)
+            message = {
+                'msg_from': s_fr['nama'],
+                'msg_to': s_to['nama'],
+                'file_name': filename,
+                'file_content': encoded_file
+            }
+            self.realms[realm_id].put(message)
+        
+            now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            folder_name = f"{now}_{username_from}_{username_to}_{filename}"
+            folder_path = join(dirname(realpath(__file__)), 'files/')
+            os.makedirs(folder_path, exist_ok=True)
+            folder_path = join(folder_path, folder_name)
+            os.makedirs(folder_path, exist_ok=True)
+            file_destination = os.path.join(folder_path, filename)
+            if 'b' in encoded_file[0]:
+                msg = encoded_file[2:-1]
+
+                with open(file_destination, "wb") as fh:
+                    fh.write(base64.b64decode(msg))
+            else:
+                tail = encoded_file.split()
+        
+        j = data.split()
+        j[0] = "recvgroupfilerealm"
+        j[1] = username_from
+        data = ' '.join(j)
+        data += "\r\n"
+        self.realms[realm_id].sendstring(data)
+        return {'status': 'OK', 'message': 'Message Sent to Group in Realm'}
+
+    def recv_group_file_realm(self, realm_id, username_from, usernames_to, filepath, encoded_file, data):
+        if (realm_id not in self.realms):
+            return {'status': 'ERROR', 'message': 'Realm Tidak Ditemukan'}
+        s_fr = self.get_user(username_from)
+
+        if (s_fr==False):
+                return {'status': 'ERROR', 'message': 'User Tidak Ditemukan'}
+            
+        filename = os.path.basename(filepath)
+        for username_to in usernames_to:
+            s_to = self.get_user(username_to)
+            message = {
+                'msg_from': s_fr['nama'],
+                'msg_to': s_to['nama'],
+                'file_name': filename,
+                'file_content': encoded_file
+            }
+            self.realms[realm_id].put(message)
+        
+            now = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            folder_name = f"{now}_{username_from}_{username_to}_{filename}"
+            folder_path = join(dirname(realpath(__file__)), 'files/')
+            os.makedirs(folder_path, exist_ok=True)
+            folder_path = join(folder_path, folder_name)
+            os.makedirs(folder_path, exist_ok=True)
+            file_destination = os.path.join(folder_path, filename)
+            if 'b' in encoded_file[0]:
+                msg = encoded_file[2:-1]
+
+                with open(file_destination, "wb") as fh:
+                    fh.write(base64.b64decode(msg))
+            else:
+                tail = encoded_file.split()
+        
         return {'status': 'OK', 'message': 'Message Sent to Group in Realm'}
 
     def get_realm_inbox(self, username,realmid):
